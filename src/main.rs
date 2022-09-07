@@ -69,7 +69,8 @@ fn cli() -> Command<'static> {
                     Arg::new("out")
                         .value_parser(clap::value_parser!(PathBuf))
                         .required(true),
-                ),
+                )
+                .arg(Arg::new("origin").action(clap::ArgAction::SetTrue)),
         )
 }
 
@@ -84,6 +85,9 @@ fn main() -> Result<()> {
     match m.subcommand() {
         Some(("processor", _)) => processor(),
         Some(("add_pieces", add_pieces_m)) => {
+            let origin = add_pieces_m.get_flag("origin");
+            info!("add_pieces for {}", if origin { "origin" } else { "new" });
+
             let pieces_json = add_pieces_m
                 .get_one::<String>("pieces_json")
                 .expect("validated by clap");
@@ -94,7 +98,7 @@ fn main() -> Result<()> {
             let pieces: Vec<PieceFile> =
                 serde_json::from_str(pieces_json).context("parse pieces_json")?;
 
-            let piece_infos = add_pieces(&pieces, out)?;
+            let piece_infos = add_pieces(&pieces, out, origin)?;
             println!("{:?}", piece_infos);
             Ok(())
         }
@@ -117,7 +121,11 @@ fn processor() -> Result<()> {
     run_consumer::<AddPieces, AddPiecesProcessor>()
 }
 
-fn add_pieces(pieces: &Vec<PieceFile>, out: impl AsRef<Path>) -> Result<Vec<PieceInfo>> {
+fn add_pieces(
+    pieces: &Vec<PieceFile>,
+    out: impl AsRef<Path>,
+    origin: bool,
+) -> Result<Vec<PieceInfo>> {
     let target_file = fs::OpenOptions::new()
         .create(true)
         .read(true)
@@ -129,13 +137,15 @@ fn add_pieces(pieces: &Vec<PieceFile>, out: impl AsRef<Path>) -> Result<Vec<Piec
 
     let mut piece_infos = Vec::with_capacity(pieces.len());
     for piece in pieces {
-        let (piece_info, _) = add_piece::add_piece(
-            fs::File::open(&piece.path).context("open piece file")?,
-            &target_file,
-            UnpaddedBytesAmount(piece.size),
-            Default::default(),
-        )
-        .context("add_piece")?;
+        let source = fs::File::open(&piece.path).context("open piece file")?;
+        let piece_size = UnpaddedBytesAmount(piece.size);
+        let (piece_info, _) = if origin {
+            filecoin_proofs::write_and_preprocess(source, &target_file, piece_size)
+                .context("write_and_preprocess")?
+        } else {
+            add_piece::add_piece(source, &target_file, piece_size, Default::default())
+                .context("add_piece")?
+        };
         piece_infos.push(piece_info);
     }
 
