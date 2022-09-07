@@ -60,8 +60,16 @@ fn cli() -> Command<'static> {
         .subcommand(Command::new("processor").about("run a vc-processor for add_pieces"))
         .subcommand(
             Command::new("add_pieces")
-                .arg(Arg::new("pieces_json").required(true))
-                .arg(Arg::new("out").required(true)),
+                .arg(
+                    Arg::new("pieces_json")
+                        .value_parser(clap::value_parser!(String))
+                        .required(true),
+                )
+                .arg(
+                    Arg::new("out")
+                        .value_parser(clap::value_parser!(PathBuf))
+                        .required(true),
+                ),
         )
 }
 
