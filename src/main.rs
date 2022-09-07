@@ -5,7 +5,7 @@ use std::{
 
 use add_piece::write_and_preprocess;
 use anyhow::{Context, Result};
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use filecoin_proofs::{PieceInfo, UnpaddedBytesAmount};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
@@ -70,7 +70,7 @@ fn cli() -> Command<'static> {
                         .value_parser(clap::value_parser!(PathBuf))
                         .required(true),
                 )
-                .arg(Arg::new("origin").action(clap::ArgAction::SetTrue)),
+                .arg(Arg::new("origin").long("origin").action(ArgAction::SetTrue)),
         )
 }
 
@@ -81,6 +81,16 @@ struct PieceFile {
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::DEBUG.into())
+                .from_env()
+                .context("env filter")?,
+        )
+        .init();
+
     let m = cli().get_matches();
     match m.subcommand() {
         Some(("processor", _)) => processor(),
@@ -107,16 +117,6 @@ fn main() -> Result<()> {
 }
 
 fn processor() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::DEBUG.into())
-                .from_env()
-                .context("env filter")?,
-        )
-        .init();
-
     info!("start add_pieces consumer");
     run_consumer::<AddPieces, AddPiecesProcessor>()
 }
