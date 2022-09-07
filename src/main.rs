@@ -5,10 +5,13 @@ use std::{
 
 use add_piece::write_and_preprocess;
 use anyhow::{Context, Result};
+use clap::{Arg, Command};
 use filecoin_proofs::{PieceInfo, UnpaddedBytesAmount};
-use tracing::debug;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
+use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, EnvFilter};
 use vc_processors::{
-    builtin::tasks::AddPieces,
+    builtin::{processors::piece, tasks::AddPieces},
     core::{ext::run_consumer, Processor, Task},
 };
 
@@ -50,29 +53,44 @@ impl Processor<AddPieces> for AddPiecesProcessor {
     }
 }
 
-#[derive(clap::Parser)]
-struct Args {
-    #[clap(subcommand)]
-    action: Action,
+fn cli() -> Command<'static> {
+    Command::new("add_pieces")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(Command::new("processor").about("run a vc-processor for add_pieces"))
+        .subcommand(
+            Command::new("add_pieces")
+                .arg(Arg::new("pieces_json").required(true))
+                .arg(Arg::new("out").required(true)),
+        )
 }
 
-#[derive(clap::Subcommand)]
-enum Action {
-    Processor,
-    Add {
-        pieces: Vec<(PathBuf, usize)>,
-        out: PathBuf,
-    },
+#[derive(Debug, Deserialize, Serialize)]
+struct PieceFile {
+    path: PathBuf,
+    size: u64,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-    match args.action {
-        Action::Processor => processor(),
-        Action::Add { pieces, out } => {
-            println!("{:?}", add_pieces(&pieces, out)?);
+    let m = cli().get_matches();
+    match m.subcommand() {
+        Some(("processor", _)) => processor(),
+        Some(("add_pieces", add_pieces_m)) => {
+            let pieces_json = add_pieces_m
+                .get_one::<String>("pieces_json")
+                .expect("validated by clap");
+            let out = add_pieces_m
+                .get_one::<PathBuf>("out")
+                .expect("validated by clap");
+
+            let pieces: Vec<PieceFile> =
+                serde_json::from_str(pieces_json).context("parse pieces_json")?;
+
+            let piece_infos = add_pieces(&pieces, out)?;
+            println!("{:?}", piece_infos);
             Ok(())
         }
+        _ => unreachable!(),
     }
 }
 
@@ -91,7 +109,7 @@ fn processor() -> Result<()> {
     run_consumer::<AddPieces, AddPiecesProcessor>()
 }
 
-fn add_pieces(pieces: &Vec<(PathBuf, usize)>, out: AsRef<Path>) -> Result<Vec<PieceInfo>> {
+fn add_pieces(pieces: &Vec<PieceFile>, out: impl AsRef<Path>) -> Result<Vec<PieceInfo>> {
     let target_file = fs::OpenOptions::new()
         .create(true)
         .read(true)
@@ -101,12 +119,12 @@ fn add_pieces(pieces: &Vec<(PathBuf, usize)>, out: AsRef<Path>) -> Result<Vec<Pi
         .open(out.as_ref())
         .with_context(|| format!("open staged file: {}", out.as_ref().display()))?;
 
-    let piece_infos = Vec::with_capacity(pieces.len());
-    for (piece_path, piece_size) in pieces {
+    let mut piece_infos = Vec::with_capacity(pieces.len());
+    for piece in pieces {
         let (piece_info, _) = add_piece::add_piece(
-            fs::File::open(piece),
-            target_file,
-            UnpaddedBytesAmount(piece_size),
+            fs::File::open(&piece.path).context("open piece file")?,
+            &target_file,
+            UnpaddedBytesAmount(piece.size),
             Default::default(),
         )
         .context("add_piece")?;

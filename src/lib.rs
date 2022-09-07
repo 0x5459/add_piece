@@ -14,7 +14,6 @@ mod chunks_reader;
 mod commitment_reader;
 
 use chunks_reader::ChunksReader;
-use commitment_reader::CommitmentReader;
 use vc_processors::fil_proofs::RegisteredSealProof;
 
 /// Writes bytes from `source` to `target`, adding bit-padding ("preprocessing")

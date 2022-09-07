@@ -12,6 +12,8 @@ rayon = "1.1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = "3.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.56"
 vc-processors = { git = "https://github.com/ipfs-force-community/venus-cluster", branch = "fix/0x5459/move_fn_init_numa_pool_out_of_vc_processors", default-features = false, features = ["builtin"] }
 storage-proofs-core = { version = "11.1.1", default-features = false}
 filecoin-proofs = { version = "11.1.1", default-features = false }
